@@ -122,8 +122,7 @@ def send_emails():
         if 'email' not in df.columns:
             return "Missing 'email' column in uploaded file."
 
-        thread = Thread(target=send_bulk_emails, args=(
-            smtp_server, smtp_port, sender, password, reply_to, subject, body_template, df))
+        thread = Thread(target=send_bulk_emails, args=(smtp_server, smtp_port, sender, password, reply_to, subject, body_template, df))
         thread.start()
 
         return "📨 Sending emails... Check progress below."
