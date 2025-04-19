@@ -1,4 +1,5 @@
 from flask import Flask, render_template, request, jsonify
+from flask_cors import CORS  # Added for CORS handling
 from threading import Thread
 import pandas as pd
 import smtplib
@@ -6,6 +7,7 @@ from email.message import EmailMessage
 import os, time, re
 
 app = Flask(__name__)
+CORS(app)  # Allow CORS to enable frontend communication (optional if same domain)
 
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
