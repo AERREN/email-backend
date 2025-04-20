@@ -134,4 +134,5 @@ def send_emails():
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    # Step 3: Change to ensure the app runs on all IPs (publicly accessible) and on port 3000 for Replit
+    app.run(host='0.0.0.0', port=3000)
