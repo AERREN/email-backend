@@ -1,3 +1,4 @@
+from flask_cors import CORS
 from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS  # Added for CORS handling
 from threading import Thread
