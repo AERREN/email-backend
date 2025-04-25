@@ -1,0 +1,161 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Secure Bulk Email Sender</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: url('https://images.unsplash.com/photo-1504384308090-c894fdcc538d') no-repeat center center fixed;
+      background-size: cover;
+      color: #fff;
+    }
+
+    h2 {
+      text-align: center;
+      margin-top: 30px;
+      font-size: 2rem;
+      color: #f0f0f0;
+    }
+
+    form {
+      max-width: 600px;
+      margin: 2rem auto;
+      background-color: rgba(0, 0, 0, 0.6);
+      padding: 2rem;
+      border-radius: 12px;
+      box-shadow: 0 0 20px rgba(0,0,0,0.5);
+      animation: fadeInUp 1s ease;
+    }
+
+    label {
+      display: block;
+      margin: 1rem 0 0.5rem;
+      font-weight: bold;
+    }
+
+    input, textarea {
+      width: 100%;
+      padding: 10px;
+      border-radius: 6px;
+      border: none;
+      margin-bottom: 1rem;
+      font-size: 1rem;
+    }
+
+    button {
+      padding: 12px 20px;
+      background-color: #00b894;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: background 0.3s ease;
+      color: white;
+    }
+
+    button:hover {
+      background-color: #019875;
+    }
+
+    #status {
+      max-width: 600px;
+      margin: 1rem auto;
+      background: rgba(0, 0, 0, 0.6);
+      padding: 1rem;
+      border-radius: 10px;
+      font-family: monospace;
+      white-space: pre-wrap;
+      color: #fffa;
+    }
+
+    @keyframes fadeInUp {
+      from {
+        opacity: 0;
+        transform: translateY(30px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+  </style>
+</head>
+<body>
+  <h2>🔒 Secure Bulk Email Sender</h2>
+
+  <form id="emailForm">
+    <label>SMTP Server
+      <input type="text" name="smtp_server" required placeholder="e.g. smtp.gmail.com">
+    </label>
+    <label>SMTP Port
+      <input type="number" name="smtp_port" required placeholder="e.g. 587">
+    </label>
+    <label>Sender Email
+      <input type="email" name="sender_email" required placeholder="Your email address">
+    </label>
+    <label>Sender Password (Use App Password)
+      <input type="password" name="sender_password" required placeholder="Your app password">
+    </label>
+    <label>Reply-To Email
+      <input type="email" name="reply_to" required placeholder="Reply-to email">
+    </label>
+    <label>Email Subject
+      <input type="text" name="subject" required placeholder="Subject line">
+    </label>
+    <label>Email Body
+      <textarea name="body" rows="6" required placeholder="Dear {first_name}, ..."></textarea>
+    </label>
+    <label>Upload CSV or Excel file
+      <input type="file" name="file" required>
+    </label>
+    <button type="submit">🚀 Send Emails</button>
+  </form>
+
+  <div id="status">🕒 Waiting to send...</div>
+
+  <script>
+    const form = document.getElementById('emailForm');
+    const statusBox = document.getElementById('status');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const formData = new FormData(form);
+      statusBox.textContent = "📨 Sending emails...";
+
+      try {
+        const res = await fetch('https://email-backend-1.onrender.com/send', {
+          method: 'POST',
+          body: formData
+        });
+
+        const text = await res.text();
+        statusBox.textContent = text;
+        pollStatus();
+      } catch (err) {
+        statusBox.textContent = "❌ Error connecting to backend: " + err.message;
+      }
+    });
+
+    async function pollStatus() {
+      const interval = setInterval(async () => {
+        try {
+          const res = await fetch('https://email-backend-1.onrender.com/status');
+          const log = await res.json();
+          statusBox.textContent = log.join('\n');
+
+          if (log.some(line => line.includes("All emails sent") || line.includes("Failed to send"))) {
+            clearInterval(interval);
+          }
+        } catch (err) {
+          clearInterval(interval);
+          statusBox.textContent = "❌ Failed to poll status: " + err.message;
+        }
+      }, 3000);
+    }
+  </script>
+</body>
+</html>
