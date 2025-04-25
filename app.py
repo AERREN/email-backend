@@ -1,4 +1,3 @@
-from flask_cors import CORS
 from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS  # Added for CORS handling
 from threading import Thread
@@ -38,9 +37,20 @@ def send_bulk_emails(smtp_server, smtp_port, sender, password, reply_to, subject
     total_sent = 0
 
     try:
+        # Select server details based on the input
+        if smtp_server == "smtp.gmail.com":
+            smtp_server = "smtp.gmail.com"
+            smtp_port = 587  # TLS port for Gmail
+        elif smtp_server == "smtp.yandex.com":
+            smtp_server = "smtp.yandex.com"
+            smtp_port = 465  # SSL port for Yandex
+
+        # Connect to SMTP server
         with smtplib.SMTP(smtp_server, smtp_port) as smtp:
-            smtp.starttls()
-            smtp.login(sender, password)
+            if smtp_port == 465:
+                smtp.starttls()  # For Yandex SSL
+            else:
+                smtp.login(sender, password)
             status_log.append("✅ Logged in to SMTP server.")
 
             for index, row in df.iterrows():
@@ -103,6 +113,7 @@ def send_bulk_emails(smtp_server, smtp_port, sender, password, reply_to, subject
 @app.route('/send', methods=['POST'])
 def send_emails():
     try:
+        # Extract form data
         smtp_server = request.form['smtp_server']
         smtp_port = int(request.form['smtp_port'])
         sender = request.form['sender_email']
@@ -112,9 +123,11 @@ def send_emails():
         body_template = request.form['body']
         file = request.files['file']
 
+        # Save uploaded file
         filepath = os.path.join(UPLOAD_FOLDER, file.filename)
         file.save(filepath)
 
+        # Read the file into a DataFrame
         if filepath.endswith('.xlsx'):
             df = pd.read_excel(filepath)
         elif filepath.endswith('.csv'):
@@ -122,9 +135,11 @@ def send_emails():
         else:
             return "Unsupported file format. Use CSV or XLSX."
 
+        # Check if email column exists
         if 'email' not in df.columns:
             return "Missing 'email' column in uploaded file."
 
+        # Start sending emails in a separate thread
         thread = Thread(target=send_bulk_emails, args=(smtp_server, smtp_port, sender, password, reply_to, subject, body_template, df))
         thread.start()
 
@@ -135,5 +150,5 @@ def send_emails():
 
 
 if __name__ == '__main__':
-    # Step 3: Change to ensure the app runs on all IPs (publicly accessible) and on port 3000 for Replit
+    # Run the app on all IPs (publicly accessible) and port 3000
     app.run(host='0.0.0.0', port=3000)
