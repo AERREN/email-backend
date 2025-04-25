@@ -126,7 +126,7 @@
       statusBox.textContent = "📨 Sending emails...";
 
       try {
-        fetch('https://47c2c065-6638-4346-8833-b283a050d61a-00-3dwi5k1pl6vu1.sisko.replit.dev/send', {
+        const res = await fetch('https://47c2c065-6638-4346-8833-b283a050d61a-00-3dwi5k1pl6vu1.sisko.replit.dev/send', {
           method: 'POST',
           body: formData
         });
@@ -142,7 +142,7 @@
     async function pollStatus() {
       const interval = setInterval(async () => {
         try {
-          fetch('https://47c2c065-6638-4346-8833-b283a050d61a-00-3dwi5k1pl6vu1.sisko.replit.dev/status')
+          const res = await fetch('https://47c2c065-6638-4346-8833-b283a050d61a-00-3dwi5k1pl6vu1.sisko.replit.dev/status');
           const log = await res.json();
           statusBox.textContent = log.join('\n');
 
