@@ -8,9 +8,17 @@
     body {
       margin: 0;
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background: url('https://images.unsplash.com/photo-1504384308090-c894fdcc538d') no-repeat center center fixed;
-      background-size: cover;
+      background: #111;
+      overflow-x: hidden;
       color: #fff;
+    }
+
+    canvas.bubbles {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: -1;
     }
 
     h2 {
@@ -18,6 +26,7 @@
       margin-top: 30px;
       font-size: 2rem;
       color: #f0f0f0;
+      animation: fadeInDown 1s ease;
     }
 
     form {
@@ -71,19 +80,32 @@
       color: #fffa;
     }
 
+    #game {
+      margin: 4rem auto;
+      text-align: center;
+    }
+
+    #game canvas {
+      background: #222;
+      border: 3px solid #00b894;
+      border-radius: 12px;
+      margin-top: 1rem;
+    }
+
     @keyframes fadeInUp {
-      from {
-        opacity: 0;
-        transform: translateY(30px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
+      from { opacity: 0; transform: translateY(30px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes fadeInDown {
+      from { opacity: 0; transform: translateY(-30px); }
+      to { opacity: 1; transform: translateY(0); }
     }
   </style>
 </head>
 <body>
+<canvas class="bubbles"></canvas>
+
   <h2>🔒 Secure Bulk Email Sender</h2>
 
   <form id="emailForm">
@@ -115,6 +137,11 @@
   </form>
 
   <div id="status">🕒 Waiting to send...</div>
+
+  <div id="game">
+    <h2>🎮 Play Catch the Coin!</h2>
+    <canvas id="coinGame" width="400" height="300"></canvas>
+  </div>
 
   <script>
     const form = document.getElementById('emailForm');
@@ -155,6 +182,76 @@
         }
       }, 3000);
     }
+
+    // BUBBLE ANIMATION
+    const canvas = document.querySelector('.bubbles');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const bubbles = [];
+    for (let i = 0; i < 50; i++) {
+      bubbles.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        r: Math.random() * 8 + 2,
+        d: Math.random() * 2,
+        c: `hsl(${Math.random()*360}, 100%, 70%)`
+      });
+    }
+
+    function drawBubbles() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      bubbles.forEach(b => {
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+        ctx.fillStyle = b.c;
+        ctx.fill();
+        b.y -= b.d;
+        if (b.y < 0) b.y = canvas.height;
+      });
+      requestAnimationFrame(drawBubbles);
+    }
+    drawBubbles();
+
+    // SIMPLE GAME
+    const gameCanvas = document.getElementById('coinGame');
+    const gctx = gameCanvas.getContext('2d');
+    let playerX = 180, coinX = 100, coinY = 0, score = 0;
+
+    function drawGame() {
+      gctx.clearRect(0, 0, 400, 300);
+      gctx.fillStyle = "#fff";
+      gctx.fillText("Score: " + score, 10, 20);
+
+      // Draw player
+      gctx.fillStyle = "#00b894";
+      gctx.fillRect(playerX, 260, 40, 20);
+
+      // Draw coin
+      gctx.beginPath();
+      gctx.arc(coinX, coinY, 10, 0, Math.PI * 2);
+      gctx.fillStyle = "gold";
+      gctx.fill();
+
+      coinY += 2;
+      if (coinY > 270 && coinX > playerX && coinX < playerX + 40) {
+        score++;
+        coinY = 0;
+        coinX = Math.random() * 380;
+      } else if (coinY > 300) {
+        coinY = 0;
+        coinX = Math.random() * 380;
+      }
+
+      requestAnimationFrame(drawGame);
+    }
+    drawGame();
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'ArrowLeft' && playerX > 0) playerX -= 20;
+      if (e.key === 'ArrowRight' && playerX < 360) playerX += 20;
+    });
   </script>
 </body>
 </html>
