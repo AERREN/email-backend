@@ -5,6 +5,7 @@ import pandas as pd
 import smtplib
 from email.message import EmailMessage
 import os, time, re
+import docx  # For parsing .docx files
 
 app = Flask(__name__)
 CORS(app)
@@ -30,7 +31,7 @@ def is_valid_email(email):
     return re.match(r"[^@]+@[^@]+\.[^@]+", email)
 
 
-def send_bulk_emails(smtp_server, smtp_port, sender, password, reply_to, subject, body_template, df):
+def send_bulk_emails(smtp_server, smtp_port, sender, password, reply_to, subject, body_template, df, is_html):
     global status_log
     status_log.clear()
     failed_emails = []
@@ -85,7 +86,11 @@ def send_bulk_emails(smtp_server, smtp_port, sender, password, reply_to, subject
                         failed_emails.append(email_address)
                         break
 
-                    msg.set_content(body)
+                    if is_html:
+                        msg.add_alternative(body, subtype='html')
+                    else:
+                        msg.set_content(body)
+
                     smtp.send_message(msg)
                     status_log.append(f"✅ Sent to {email_address}")
                     sent = True
@@ -125,6 +130,19 @@ def send_emails():
         body_template = request.form['body']
         file = request.files['file']
 
+        # Handle template file
+        html_file = request.files.get('html_file')
+        docx_file = request.files.get('docx_file')
+        is_html = False
+
+        if html_file and html_file.filename.endswith('.html'):
+            body_template = html_file.read().decode('utf-8')
+            is_html = True
+        elif docx_file and docx_file.filename.endswith('.docx'):
+            doc = docx.Document(docx_file)
+            body_template = '\n'.join([para.text for para in doc.paragraphs])
+            is_html = False
+
         filepath = os.path.join(UPLOAD_FOLDER, file.filename)
         file.save(filepath)
 
@@ -139,7 +157,7 @@ def send_emails():
             return "Missing 'email' column in uploaded file."
 
         thread = Thread(target=send_bulk_emails, args=(
-            smtp_server, smtp_port, sender, password, reply_to, subject, body_template, df
+            smtp_server, smtp_port, sender, password, reply_to, subject, body_template, df, is_html
         ))
         thread.start()
 
