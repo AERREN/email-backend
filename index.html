@@ -128,10 +128,16 @@
       <input type="text" name="subject" required placeholder="Subject line">
     </label>
     <label>Email Body
-      <textarea name="body" rows="6" required placeholder="Dear {first_name}, ..."></textarea>
+      <textarea name="body" rows="6" placeholder="Dear {first_name}, ..."></textarea>
     </label>
     <label>Upload CSV or Excel file
       <input type="file" name="file" required>
+    </label>
+    <label>Upload HTML File (Optional)
+      <input type="file" name="html_file" accept=".html">
+    </label>
+    <label>Upload DOCX File (Optional)
+      <input type="file" name="docx_file" accept=".docx">
     </label>
     <button type="submit">🚀 Send Emails</button>
   </form>
