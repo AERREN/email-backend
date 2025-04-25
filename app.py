@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, jsonify
-from flask_cors import CORS  # Added for CORS handling
+from flask_cors import CORS
 from threading import Thread
 import pandas as pd
 import smtplib
@@ -7,7 +7,7 @@ from email.message import EmailMessage
 import os, time, re
 
 app = Flask(__name__)
-CORS(app)  # Allow CORS to enable frontend communication (optional if same domain)
+CORS(app)
 
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -37,31 +37,23 @@ def send_bulk_emails(smtp_server, smtp_port, sender, password, reply_to, subject
     total_sent = 0
 
     try:
-        # Select server details based on the input
-        if smtp_server == "smtp.gmail.com":
-            smtp_server = "smtp.gmail.com"
-            smtp_port = 587  # TLS port for Gmail
-            use_ssl = False  # Gmail uses TLS, not SSL
-        elif smtp_server == "smtp.yandex.com":
-            smtp_server = "smtp.yandex.com"
-            smtp_port = 465  # SSL port for Yandex
-            use_ssl = True  # Yandex uses SSL
+        smtp = None
+        # Determine connection type based on port
+        if smtp_port == 465:
+            smtp = smtplib.SMTP_SSL(smtp_server, smtp_port)
+            status_log.append("🔒 Using SSL connection.")
+        elif smtp_port == 587:
+            smtp = smtplib.SMTP(smtp_server, smtp_port)
+            smtp.ehlo()
+            smtp.starttls()
+            status_log.append("🔐 Using STARTTLS connection.")
         else:
-            status_log.append(f"❌ Unsupported SMTP server: {smtp_server}")
+            status_log.append(f"❌ Unsupported port: {smtp_port}")
             return
 
-        # Connect to SMTP server
-        if use_ssl:
-            with smtplib.SMTP_SSL(smtp_server, smtp_port) as smtp:
-                smtp.login(sender, password)  # Login with sender's email and app password
-                status_log.append("✅ Logged in to SMTP server using SSL.")
-        else:
-            with smtplib.SMTP(smtp_server, smtp_port) as smtp:
-                smtp.starttls()  # Start TLS connection for Gmail
-                smtp.login(sender, password)  # Login with sender's email and app password
-                status_log.append("✅ Logged in to SMTP server using TLS.")
+        smtp.login(sender, password)
+        status_log.append("✅ Logged in to SMTP server.")
 
-        # Sending emails logic
         for index, row in df.iterrows():
             if total_sent >= MAX_EMAILS_PER_SESSION:
                 status_log.append("🛑 Spam limit reached (100 emails per session).")
@@ -108,6 +100,8 @@ def send_bulk_emails(smtp_server, smtp_port, sender, password, reply_to, subject
             if not sent and email_address not in failed_emails:
                 failed_emails.append(email_address)
 
+        smtp.quit()
+
         if failed_emails:
             status_log.append(f"❌ Failed to send to: {failed_emails}")
         else:
@@ -122,7 +116,6 @@ def send_bulk_emails(smtp_server, smtp_port, sender, password, reply_to, subject
 @app.route('/send', methods=['POST'])
 def send_emails():
     try:
-        # Extract form data
         smtp_server = request.form['smtp_server']
         smtp_port = int(request.form['smtp_port'])
         sender = request.form['sender_email']
@@ -132,11 +125,9 @@ def send_emails():
         body_template = request.form['body']
         file = request.files['file']
 
-        # Save uploaded file
         filepath = os.path.join(UPLOAD_FOLDER, file.filename)
         file.save(filepath)
 
-        # Read the file into a DataFrame
         if filepath.endswith('.xlsx'):
             df = pd.read_excel(filepath)
         elif filepath.endswith('.csv'):
@@ -144,12 +135,12 @@ def send_emails():
         else:
             return "Unsupported file format. Use CSV or XLSX."
 
-        # Check if email column exists
         if 'email' not in df.columns:
             return "Missing 'email' column in uploaded file."
 
-        # Start sending emails in a separate thread
-        thread = Thread(target=send_bulk_emails, args=(smtp_server, smtp_port, sender, password, reply_to, subject, body_template, df))
+        thread = Thread(target=send_bulk_emails, args=(
+            smtp_server, smtp_port, sender, password, reply_to, subject, body_template, df
+        ))
         thread.start()
 
         return "📨 Sending emails... Check progress below."
@@ -159,5 +150,4 @@ def send_emails():
 
 
 if __name__ == '__main__':
-    # Run the app on all IPs (publicly accessible) and port 3000
     app.run(host='0.0.0.0', port=3000)
