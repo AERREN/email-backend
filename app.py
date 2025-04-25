@@ -47,7 +47,8 @@ def send_bulk_emails(smtp_server, smtp_port, sender, password, reply_to, subject
             smtp_port = 465  # SSL port for Yandex
             use_ssl = True  # Yandex uses SSL
         else:
-            raise ValueError("Unsupported SMTP server.")
+            status_log.append(f"❌ Unsupported SMTP server: {smtp_server}")
+            return
 
         # Connect to SMTP server
         if use_ssl:
