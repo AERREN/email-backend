@@ -18,6 +18,25 @@ status_log = []
 MAX_EMAILS_PER_SESSION = 100
 DELAY_BETWEEN_EMAILS = 4  # seconds
 
+DEFAULT_SMTP_CONFIGS = {
+    'brevo': {
+        'server': 'smtp-relay.brevo.com',
+        'port': 587
+    },
+    'gmail': {
+        'server': 'smtp.gmail.com',
+        'port': 587
+    },
+    'yandex': {
+        'server': 'smtp.yandex.com',
+        'port': 465
+    },
+    'zoho': {
+        'server': 'smtp.zoho.com',
+        'port': 465
+    }
+}
+
 @app.route('/')
 def form():
     return render_template('index.html')
@@ -74,9 +93,10 @@ def send_bulk_emails(smtp_server, smtp_port, sender, password, reply_to, subject
                 msg['To'] = email_address
                 msg['From'] = sender
                 msg['Reply-To'] = reply_to
-                msg['Return-Path'] = sender  # Helps reduce spam marking
+                msg['Return-Path'] = sender
                 msg['X-Priority'] = '3'  # Normal priority
                 msg['X-Mailer'] = 'Python SMTP Bulk Mailer'
+                msg['List-Unsubscribe'] = f"<mailto:{reply_to}>"  # Helps reduce spam score
 
                 try:
                     body = body_template.format(
@@ -97,7 +117,7 @@ def send_bulk_emails(smtp_server, smtp_port, sender, password, reply_to, subject
                 status_log.append(f"✅ Sent to {email_address}")
                 sent = True
                 total_sent += 1
-                time.sleep(DELAY_BETWEEN_EMAILS)  # 👈 4 second delay between emails
+                time.sleep(DELAY_BETWEEN_EMAILS)
 
             except Exception as e:
                 retries += 1
@@ -125,6 +145,11 @@ def send_emails():
         subject = request.form['subject']
         body_template = request.form['body']
         file = request.files['file']
+
+        provider = request.form.get('provider', '').lower()
+        if provider in DEFAULT_SMTP_CONFIGS:
+            smtp_server = DEFAULT_SMTP_CONFIGS[provider]['server']
+            smtp_port = DEFAULT_SMTP_CONFIGS[provider]['port']
 
         html_file = request.files.get('html_file')
         docx_file = request.files.get('docx_file')
