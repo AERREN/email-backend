@@ -1,5 +1,6 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, redirect, url_for, session
 from flask_cors import CORS
+from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from threading import Thread
 import pandas as pd
 import smtplib
@@ -7,10 +8,20 @@ from email.message import EmailMessage
 import ssl
 import os, time, re
 import docx
+from werkzeug.security import generate_password_hash, check_password_hash
 
+# Initialize Flask app and Flask-Login
 app = Flask(__name__)
+app.secret_key = os.urandom(24)  # Secret key for sessions
 CORS(app)
 
+login_manager = LoginManager()
+login_manager.init_app(app)
+
+# User Database (for demo purposes)
+users = {}
+
+# Constants and File Handling
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
@@ -19,23 +30,20 @@ MAX_EMAILS_PER_SESSION = 300
 DELAY_BETWEEN_EMAILS = 4  # seconds
 
 DEFAULT_SMTP_CONFIGS = {
-    'brevo': {
-        'server': 'smtp-relay.brevo.com',
-        'port': 587
-    },
-    'gmail': {
-        'server': 'smtp.gmail.com',
-        'port': 587
-    },
-    'yandex': {
-        'server': 'smtp.yandex.com',
-        'port': 465
-    },
-    'zoho': {
-        'server': 'smtp.zoho.com',
-        'port': 465
-    }
+    'brevo': {'server': 'smtp-relay.brevo.com', 'port': 587},
+    'gmail': {'server': 'smtp.gmail.com', 'port': 587},
+    'yandex': {'server': 'smtp.yandex.com', 'port': 465},
+    'zoho': {'server': 'smtp.zoho.com', 'port': 465}
 }
+
+# Flask-Login User Class
+class User(UserMixin):
+    def __init__(self, id):
+        self.id = id
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User(user_id) if user_id in users else None
 
 @app.route('/')
 def form():
@@ -63,76 +71,43 @@ def create_smtp_connection(server, port, sender, password):
         status_log.append(f"❌ SMTP connection failed: {str(e)}")
         return None
 
-def send_bulk_emails(smtp_server, smtp_port, sender, password, reply_to, subject, body_template, df, is_html):
-    global status_log
-    status_log.clear()
-    failed_emails = []
-    total_sent = 0
+# Sign-up route
+@app.route('/signup', methods=['GET', 'POST'])
+def signup():
+    if request.method == 'POST':
+        username = request.form['username']
+        email = request.form['email']
+        password = request.form['password']
+        hashed_password = generate_password_hash(password)
+        users[username] = {'email': email, 'password': hashed_password}
+        return redirect(url_for('login'))
+    return render_template('signup.html')
 
-    smtp = create_smtp_connection(smtp_server, smtp_port, sender, password)
-    if not smtp:
-        return
+# Login route
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        user = users.get(username)
+        if user and check_password_hash(user['password'], password):
+            login_user(User(username))
+            return redirect(url_for('dashboard'))
+        return "❌ Invalid credentials"
+    return render_template('login.html')
 
-    for index, row in df.iterrows():
-        if total_sent >= MAX_EMAILS_PER_SESSION:
-            status_log.append("🛑 Spam limit reached (100 emails per session).")
-            break
+# Dashboard route (protected)
+@app.route('/dashboard')
+@login_required
+def dashboard():
+    return render_template('dashboard.html', username=current_user.id)
 
-        email_address = row.get('email', '').strip()
-        if not is_valid_email(email_address):
-            status_log.append(f"⚠️ Skipped invalid email: {email_address}")
-            continue
-
-        retries = 0
-        sent = False
-
-        while retries < 3 and not sent:
-            try:
-                msg = EmailMessage()
-                msg['Subject'] = subject
-                msg['To'] = email_address
-                msg['From'] = sender
-                msg['Reply-To'] = reply_to
-                msg['Return-Path'] = sender
-                msg['X-Priority'] = '3'  # Normal priority
-                msg['X-Mailer'] = 'Python SMTP Bulk Mailer'
-                msg['List-Unsubscribe'] = f"<mailto:{reply_to}>"  # Helps reduce spam score
-
-                try:
-                    body = body_template.format(
-                        first_name=row.get('first_name', ''),
-                        last_name=row.get('last_name', '')
-                    )
-                except KeyError as ke:
-                    status_log.append(f"❌ Formatting error for {email_address}: missing {ke}")
-                    failed_emails.append(email_address)
-                    break
-
-                if is_html:
-                    msg.add_alternative(body, subtype='html')
-                else:
-                    msg.set_content(body)
-
-                smtp.send_message(msg)
-                status_log.append(f"✅ Sent to {email_address}")
-                sent = True
-                total_sent += 1
-                time.sleep(DELAY_BETWEEN_EMAILS)
-
-            except Exception as e:
-                retries += 1
-                status_log.append(f"❌ Retry {retries} for {email_address}: {str(e)}")
-                time.sleep(DELAY_BETWEEN_EMAILS)
-
-        if not sent and email_address not in failed_emails:
-            failed_emails.append(email_address)
-
-    smtp.quit()
-
-    if failed_emails:
-        status_log.append(f"❌ Failed to send to: {failed_emails}")
-    else:
-        status_log.append("✅ All emails sent successfully!")
+# Logout route
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for('login'))
 
 @app.route('/send', methods=['POST'])
 def send_emails():
