@@ -15,7 +15,7 @@ UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 status_log = []
-MAX_EMAILS_PER_SESSION = 100
+MAX_EMAILS_PER_SESSION = 300
 DELAY_BETWEEN_EMAILS = 4  # seconds
 
 DEFAULT_SMTP_CONFIGS = {
