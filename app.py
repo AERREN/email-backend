@@ -4,8 +4,9 @@ from threading import Thread
 import pandas as pd
 import smtplib
 from email.message import EmailMessage
+import ssl
 import os, time, re
-import docx  # For parsing .docx files
+import docx
 
 app = Flask(__name__)
 CORS(app)
@@ -15,21 +16,33 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 status_log = []
 MAX_EMAILS_PER_SESSION = 100
-
+DELAY_BETWEEN_EMAILS = 4  # seconds
 
 @app.route('/')
 def form():
     return render_template('index.html')
 
-
 @app.route('/status')
 def get_status():
     return jsonify(status_log)
 
-
 def is_valid_email(email):
     return re.match(r"[^@]+@[^@]+\.[^@]+", email)
 
+def create_smtp_connection(server, port, sender, password):
+    try:
+        context = ssl.create_default_context()
+        if port == 465:
+            smtp = smtplib.SMTP_SSL(server, port, context=context)
+        else:
+            smtp = smtplib.SMTP(server, port)
+            smtp.ehlo()
+            smtp.starttls(context=context)
+        smtp.login(sender, password)
+        return smtp
+    except Exception as e:
+        status_log.append(f"❌ SMTP connection failed: {str(e)}")
+        return None
 
 def send_bulk_emails(smtp_server, smtp_port, sender, password, reply_to, subject, body_template, df, is_html):
     global status_log
@@ -37,100 +50,82 @@ def send_bulk_emails(smtp_server, smtp_port, sender, password, reply_to, subject
     failed_emails = []
     total_sent = 0
 
-    try:
-        smtp = None
-        # Determine connection type based on port
-        if smtp_port == 465:
-            smtp = smtplib.SMTP_SSL(smtp_server, smtp_port)
-            status_log.append("🔒 Using SSL connection.")
-        elif smtp_port == 587:
-            smtp = smtplib.SMTP(smtp_server, smtp_port)
-            smtp.ehlo()
-            smtp.starttls()
-            status_log.append("🔐 Using STARTTLS connection.")
-        else:
-            status_log.append(f"❌ Unsupported port: {smtp_port}")
-            return
+    smtp = create_smtp_connection(smtp_server, smtp_port, sender, password)
+    if not smtp:
+        return
 
-        smtp.login(sender, password)
-        status_log.append("✅ Logged in to SMTP server.")
+    for index, row in df.iterrows():
+        if total_sent >= MAX_EMAILS_PER_SESSION:
+            status_log.append("🛑 Spam limit reached (100 emails per session).")
+            break
 
-        for index, row in df.iterrows():
-            if total_sent >= MAX_EMAILS_PER_SESSION:
-                status_log.append("🛑 Spam limit reached (100 emails per session).")
-                break
+        email_address = row.get('email', '').strip()
+        if not is_valid_email(email_address):
+            status_log.append(f"⚠️ Skipped invalid email: {email_address}")
+            continue
 
-            email_address = row.get('email', '').strip()
-            if not is_valid_email(email_address):
-                status_log.append(f"⚠️ Skipped invalid email: {email_address}")
-                continue
+        retries = 0
+        sent = False
 
-            retries = 0
-            sent = False
+        while retries < 3 and not sent:
+            try:
+                msg = EmailMessage()
+                msg['Subject'] = subject
+                msg['To'] = email_address
+                msg['From'] = sender
+                msg['Reply-To'] = reply_to
+                msg['Return-Path'] = sender  # Helps reduce spam marking
+                msg['X-Priority'] = '3'  # Normal priority
+                msg['X-Mailer'] = 'Python SMTP Bulk Mailer'
 
-            while retries < 3 and not sent:
                 try:
-                    msg = EmailMessage()
-                    msg['Subject'] = subject
-                    msg['To'] = email_address
-                    msg['From'] = sender
-                    msg['Reply-To'] = reply_to
+                    body = body_template.format(
+                        first_name=row.get('first_name', ''),
+                        last_name=row.get('last_name', '')
+                    )
+                except KeyError as ke:
+                    status_log.append(f"❌ Formatting error for {email_address}: missing {ke}")
+                    failed_emails.append(email_address)
+                    break
 
-                    try:
-                        body = body_template.format(
-                            first_name=row.get('first_name', ''),
-                            last_name=row.get('last_name', '')
-                        )
-                    except KeyError as ke:
-                        status_log.append(f"❌ Formatting error for {email_address}: missing {ke}")
-                        failed_emails.append(email_address)
-                        break
+                if is_html:
+                    msg.add_alternative(body, subtype='html')
+                else:
+                    msg.set_content(body)
 
-                    if is_html:
-                        msg.add_alternative(body, subtype='html')
-                    else:
-                        msg.set_content(body)
+                smtp.send_message(msg)
+                status_log.append(f"✅ Sent to {email_address}")
+                sent = True
+                total_sent += 1
+                time.sleep(DELAY_BETWEEN_EMAILS)  # 👈 4 second delay between emails
 
-                    smtp.send_message(msg)
-                    status_log.append(f"✅ Sent to {email_address}")
-                    sent = True
-                    total_sent += 1
-                    time.sleep(5)
+            except Exception as e:
+                retries += 1
+                status_log.append(f"❌ Retry {retries} for {email_address}: {str(e)}")
+                time.sleep(DELAY_BETWEEN_EMAILS)
 
-                except Exception as e:
-                    retries += 1
-                    status_log.append(f"❌ Retry {retries} for {email_address}: {str(e)}")
-                    time.sleep(5)
+        if not sent and email_address not in failed_emails:
+            failed_emails.append(email_address)
 
-            if not sent and email_address not in failed_emails:
-                failed_emails.append(email_address)
+    smtp.quit()
 
-        smtp.quit()
-
-        if failed_emails:
-            status_log.append(f"❌ Failed to send to: {failed_emails}")
-        else:
-            status_log.append("✅ All emails sent successfully!")
-
-    except smtplib.SMTPAuthenticationError:
-        status_log.append("❌ Authentication failed. Check your email or app password.")
-    except Exception as e:
-        status_log.append(f"❌ General error: {str(e)}")
-
+    if failed_emails:
+        status_log.append(f"❌ Failed to send to: {failed_emails}")
+    else:
+        status_log.append("✅ All emails sent successfully!")
 
 @app.route('/send', methods=['POST'])
 def send_emails():
     try:
-        smtp_server = request.form['smtp_server']
+        smtp_server = request.form['smtp_server'].strip()
         smtp_port = int(request.form['smtp_port'])
-        sender = request.form['sender_email']
+        sender = request.form['sender_email'].strip()
         password = request.form['sender_password']
-        reply_to = request.form['reply_to']
+        reply_to = request.form['reply_to'].strip()
         subject = request.form['subject']
         body_template = request.form['body']
         file = request.files['file']
 
-        # Handle template file
         html_file = request.files.get('html_file')
         docx_file = request.files.get('docx_file')
         is_html = False
@@ -165,7 +160,6 @@ def send_emails():
 
     except Exception as e:
         return f"❌ Error during processing: {str(e)}"
-
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=3000)
