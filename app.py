@@ -45,13 +45,65 @@ class User(UserMixin):
 def load_user(user_id):
     return User(user_id) if user_id in users else None
 
+# ------------ FRONTEND ROUTES ------------
 @app.route('/')
 def form():
     return render_template('index.html')
 
+@app.route('/dashboard')
+@login_required
+def dashboard():
+    return render_template('dashboard.html', username=current_user.id)
+
 @app.route('/status')
 def get_status():
     return jsonify(status_log)
+
+# ------------ AUTH APIs (for frontend JS) ------------
+
+@app.route('/register', methods=['POST'])
+def api_register():
+    data = request.get_json()
+    username = data['username']
+    email = data['email']
+    password = data['password']
+    if username in users:
+        return jsonify({"error": "User already exists!"}), 400
+    hashed_password = generate_password_hash(password)
+    users[username] = {'email': email, 'password': hashed_password, 'activities': []}
+    return jsonify({"message": "Registered successfully!"})
+
+@app.route('/login', methods=['POST'])
+def api_login():
+    data = request.get_json()
+    username = data['username']
+    password = data['password']
+    user = users.get(username)
+    if user and check_password_hash(user['password'], password):
+        login_user(User(username))
+        return jsonify({"message": "Login successful!"})
+    return jsonify({"error": "Invalid credentials"}), 401
+
+@app.route('/userdata', methods=['GET'])
+@login_required
+def userdata():
+    username = current_user.id
+    user_data = users.get(username)
+    if not user_data:
+        return jsonify({"error": "User not found"}), 404
+    return jsonify({
+        "username": username,
+        "email": user_data['email'],
+        "activities": user_data['activities']
+    })
+
+@app.route('/logout', methods=['GET'])
+@login_required
+def api_logout():
+    logout_user()
+    return jsonify({"message": "Logged out successfully!"})
+
+# ------------ EMAIL SENDER ------------
 
 def is_valid_email(email):
     return re.match(r"[^@]+@[^@]+\.[^@]+", email)
@@ -71,45 +123,8 @@ def create_smtp_connection(server, port, sender, password):
         status_log.append(f"❌ SMTP connection failed: {str(e)}")
         return None
 
-# Sign-up route
-@app.route('/signup', methods=['GET', 'POST'])
-def signup():
-    if request.method == 'POST':
-        username = request.form['username']
-        email = request.form['email']
-        password = request.form['password']
-        hashed_password = generate_password_hash(password)
-        users[username] = {'email': email, 'password': hashed_password}
-        return redirect(url_for('login'))
-    return render_template('signup.html')
-
-# Login route
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-        user = users.get(username)
-        if user and check_password_hash(user['password'], password):
-            login_user(User(username))
-            return redirect(url_for('dashboard'))
-        return "❌ Invalid credentials"
-    return render_template('login.html')
-
-# Dashboard route (protected)
-@app.route('/dashboard')
-@login_required
-def dashboard():
-    return render_template('dashboard.html', username=current_user.id)
-
-# Logout route
-@app.route('/logout')
-@login_required
-def logout():
-    logout_user()
-    return redirect(url_for('login'))
-
 @app.route('/send', methods=['POST'])
+@login_required
 def send_emails():
     try:
         smtp_server = request.form['smtp_server'].strip()
@@ -160,6 +175,43 @@ def send_emails():
 
     except Exception as e:
         return f"❌ Error during processing: {str(e)}"
+
+def send_bulk_emails(smtp_server, smtp_port, sender, password, reply_to, subject, body_template, df, is_html):
+    smtp = create_smtp_connection(smtp_server, smtp_port, sender, password)
+    if not smtp:
+        return
+
+    try:
+        for index, row in df.iterrows():
+            if index >= MAX_EMAILS_PER_SESSION:
+                break
+
+            to_email = str(row['email']).strip()
+            if not is_valid_email(to_email):
+                status_log.append(f"❌ Invalid email address: {to_email}")
+                continue
+
+            msg = EmailMessage()
+            msg['Subject'] = subject
+            msg['From'] = sender
+            msg['To'] = to_email
+            msg['Reply-To'] = reply_to
+            if is_html:
+                msg.add_alternative(body_template, subtype='html')
+            else:
+                msg.set_content(body_template)
+
+            try:
+                smtp.send_message(msg)
+                status_log.append(f"✅ Sent to {to_email}")
+            except Exception as e:
+                status_log.append(f"❌ Failed to send to {to_email}: {str(e)}")
+
+            time.sleep(DELAY_BETWEEN_EMAILS)
+    finally:
+        smtp.quit()
+
+# ------------ START SERVER ------------
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=3000)
